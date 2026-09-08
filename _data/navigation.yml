@@ -7,9 +7,9 @@ main:
     url: /education/
   - title: "About Me"
     url: /about me/
-    title: "Assignment1"
+  - title: "Assignment1"
     url: /Assignment1/
-    title: "Assignment2"
+  - title: "Assignment2"
     url: /Assignment2/
-    title: "Assignment3"
+  - title: "Assignment3"
     url: /Assignment3/
