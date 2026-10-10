@@ -5,7 +5,12 @@ title: "Assignment-1"
 
 
 Exploring Language in Science Fiction Through Computational Analysis
+
+Group Work: Deema and Jane
+
 1. Background & Expectations
+
+
 Before beginning our analysis, we expected science fiction to focus mainly on superpowers, aliens, creatures, supernatural characters, and futuristic technology. We imagined that the language would mostly reflect imaginative beings, extraordinary abilities, and space exploration. We were interested in seeing whether particular words would appear more frequently in the tags we associated with them, such as war in War, Mars in Mars, and space-related vocabulary in Space Travel. We started with the custom words already there (“robot”, "alien", "spaceship", "mars", "war"), then moved to random words that seemed relatable ("faculty", "creature", "sword", "power", "fight"), then moved to 2 sets of more categorized words: space related ("firmament", "void", "cosmos", "orbit", "atmosphere") and war related ("bombardment", "invasion", "fleet", "defense", "sovereignty").
 We expected that words associated with war would appear most frequently in the War category and same for the other tags. We first analyzed the prewritten custom words and our results mostly supported this expectation: war had its highest relative frequency in the War tag, at 0.58 occurrences per 1,000 words. However, it also appeared frequently in Society, at 0.37, and Action, at 0.29. We were expecting to see war in Society because conflict is often represented in stories about social life and organization, and it was a nice validation when we saw it there.
 
