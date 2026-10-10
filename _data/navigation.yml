@@ -6,13 +6,12 @@ main:
   - title: "Education"
     url: /education/
   - title: "About Me"
-    url: /about me/
-  - title: "Assignment1"
-    url: /Assignment1/
-  - title: "Assignment2"
-    url: /Assignment2/
-  - title: "Assignment3"
-    url: /Assignment3/
+    url: /about-me/
+  - title: "Assignment 1"
+    url: /Assignment-1/
+  - title: "Assignment 2"
+    url: /Assignment-2/
+  - title: "Assignment 3"
+    url: /Assignment-3/
   - title: "Digital Literacy"
     url: /dln/
-    
