@@ -1,0 +1,558 @@
+
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="UTF-8"/>
+        <title>kepler.gl embedded map</title>
+
+        <!--Uber Font-->
+        <link rel="stylesheet" href="https://d1a3f4spazzrp4.cloudfront.net/kepler.gl/uber-fonts/4.0.0/superfine.css">
+
+        <!--Kepler css-->
+        <link href="https://unpkg.com/kepler.gl@3.3.0-alpha.21/umd/keplergl.min.css" rel="stylesheet">
+
+        <!--MapBox css-->
+        <link href="https://api.tiles.mapbox.com/mapbox-gl-js/v1.1.1/mapbox-gl.css" rel="stylesheet">
+        <link href="https://unpkg.com/maplibre-gl@^3/dist/maplibre-gl.css" rel="stylesheet">
+
+        <!-— facebook open graph tags -->
+        <meta property="og:url" content="http://kepler.gl/" />
+        <meta property="og:title" content="Large-scale WebGL-powered Geospatial Data Visualization Tool" />
+        <meta property="og:description" content="Kepler.gl is a powerful web-based geospatial data analysis tool. Built on a high performance rendering engine and designed for large-scale data sets." />
+        <meta property="og:site_name" content="kepler.gl" />
+        <meta property="og:image" content="https://d1a3f4spazzrp4.cloudfront.net/kepler.gl/kepler.gl-meta-tag.png" />
+        <meta property="og:image:type" content="image/png" />
+        <meta property="og:image:width" content="800" />
+        <meta property="og:image:height" content="800" />
+
+        <!-— twitter card tags -->
+        <meta name="twitter:card" content="summary_large_image">
+        <meta name="twitter:site" content="@openjsf">
+        <meta name="twitter:creator" content="@openjsf">
+        <meta name="twitter:title" content="Large-scale WebGL-powered Geospatial Data Visualization Tool">
+        <meta name="twitter:description" content="Kepler.gl is a powerful web-based geospatial data analysis tool. Built on a high performance rendering engine and designed for large-scale data sets.">
+        <meta name="twitter:image" content="https://d1a3f4spazzrp4.cloudfront.net/kepler.gl/kepler.gl-meta-tag.png" />
+
+        <!--
+          Load React/Redux and the other UMD peer dependencies as ES modules.
+          React >= 19 no longer ships UMD builds, so we pull everything from an
+          ESM CDN (esm.sh) and re-expose them on window as the globals that the
+          kepler.gl UMD bundle (and the inline scripts below) expect.
+
+          IMPORTANT: this file must keep working as a standalone file, i.e. opened
+          directly from disk via the file:// protocol. Native ES module scripts
+          are always fetched with CORS semantics and a file:// document has an
+          opaque (null) origin, so the browser refuses to load native modules or
+          import maps locally. To keep the standalone-file behaviour we run
+          es-module-shims in "shim mode" (importmap-shim / module-shim tags): it
+          is a classic script (loads fine from file://) that resolves the import
+          map and executes the modules as blob: URLs, sidestepping that
+          restriction. The import map pins a single React instance and uses
+          external= so react-redux / styled-components reuse it (otherwise React
+          hooks break).
+        -->
+        <script>
+          // Trigger es-module-shims "shim mode" so it always parses the
+          // importmap-shim / module-shim tags below instead of deferring to the
+          // native loader (which fails under file://).
+          window.esmsInitOptions = {shimMode: true};
+        </script>
+        <script>
+          // Replace the loading overlay with an error message.
+          // Safe to call at any time — once React has mounted and removed
+          // #kepler-load-screen this becomes a no-op.
+          window._keplerShowLoadError = function(msg) {
+            var loadScreen = document.getElementById('kepler-load-screen');
+            if (!loadScreen) return;
+            var spinner = loadScreen.querySelector('.kepler-spinner');
+            var label = loadScreen.querySelector('.kepler-load-label');
+            if (spinner) spinner.style.display = 'none';
+            if (label) label.style.display = 'none';
+            var errEl = document.createElement('div');
+            errEl.className = 'kepler-load-error';
+            errEl.textContent = msg || 'Failed to load the map. Check your internet connection and reload the page.';
+            loadScreen.appendChild(errEl);
+          };
+          // Catch unhandled promise rejections (e.g. ES module imports failing
+          // inside the module-shim script before loadScript is ever called).
+          window.addEventListener('unhandledrejection', function(event) {
+            console.error('kepler.gl: unhandled rejection during map load', event.reason);
+            window._keplerShowLoadError('Failed to load the map. Check your internet connection and reload the page.');
+          });
+        </script>
+        <script src="https://unpkg.com/es-module-shims@2.8.1/dist/es-module-shims.js" crossorigin="anonymous"></script>
+        
+        <script type="importmap-shim">
+          {
+            "imports": {
+              "react": "https://esm.sh/react@19.1.0",
+              "react/jsx-runtime": "https://esm.sh/react@19.1.0/jsx-runtime",
+              "react-dom": "https://esm.sh/react-dom@19.1.0?external=react",
+              "react-dom/client": "https://esm.sh/react-dom@19.1.0/client?external=react",
+              "redux": "https://esm.sh/redux@5.0.1",
+              "react-redux": "https://esm.sh/react-redux@9.3.0?external=react,react-dom,redux",
+              "styled-components": "https://esm.sh/styled-components@6.1.19?external=react,react-dom"
+            }
+          }
+        </script>
+
+        <!--
+          Expose the ES modules as globals for the UMD kepler.gl bundle, then load
+          the kepler.gl UMD script and the app bootstrap script only after those
+          globals are available. The kepler.gl UMD bundle is a classic script
+          (which loads fine from file://), so it is injected dynamically here once
+          the globals are in place to guarantee the correct ordering.
+        -->
+        <script type="module-shim">
+          import * as React from 'react';
+          import * as ReactDOM from 'react-dom';
+          import * as ReactDOMClient from 'react-dom/client';
+          import * as Redux from 'redux';
+          import * as ReactRedux from 'react-redux';
+          import * as StyledComponents from 'styled-components';
+
+          // esm.sh namespaces expose the module's default export under .default.
+          // Normalize so the globals match the shape the React 18 UMD builds had:
+          // - React / Redux / ReactRedux keep their full namespace (named exports).
+          // - ReactDOM merges the classic + client entry so both createPortal and
+          //   createRoot are available (createRoot moved to react-dom/client in v19).
+          // - styled-components' global must be the callable default (styled) with
+          //   its named exports (ThemeProvider, withTheme, css, keyframes, ...)
+          //   attached, since the kepler.gl bundle relies on both.
+          window.React = React.default || React;
+          window.ReactDOM = Object.assign({}, ReactDOM.default || ReactDOM, ReactDOMClient);
+          window.Redux = Redux.default || Redux;
+          window.ReactRedux = ReactRedux.default || ReactRedux;
+          window.styled = Object.assign(StyledComponents.default, StyledComponents);
+
+          function loadScript(src) {
+            return new Promise(function(resolve, reject) {
+              var script = document.createElement('script');
+              script.src = src;
+              script.crossOrigin = 'anonymous';
+              script.onload = resolve;
+              script.onerror = reject;
+              document.head.appendChild(script);
+            });
+          }
+
+          // Load the kepler.gl UMD bundle after the globals are in place, then run
+          // the app bootstrap scripts (marked as type="text/kepler-bootstrap").
+          loadScript("https://unpkg.com/kepler.gl@3.3.0-alpha.21/umd/keplergl.min.js")
+            .then(function() {
+              var bootstraps = document.querySelectorAll('script[type="text/kepler-bootstrap"]');
+              bootstraps.forEach(function(node) {
+                var script = document.createElement('script');
+                script.text = node.textContent;
+                document.body.appendChild(script);
+              });
+            })
+            .catch(function(error) {
+              console.error('kepler.gl: failed to load UMD bundle', error);
+              window._keplerShowLoadError('Failed to load the map bundle. Check your internet connection and reload the page.');
+            });
+        </script>
+        <style type="text/css">
+          body {margin: 0; padding: 0; overflow: hidden;}
+          #kepler-load-screen {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: #29323c;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            z-index: 9999;
+            font-family: ff-clan-web-pro, 'Helvetica Neue', Helvetica, sans-serif;
+            color: #a0a7b4;
+          }
+          #kepler-load-screen .kepler-spinner {
+            width: 48px; height: 48px;
+            border: 4px solid rgba(255,255,255,0.08);
+            border-top-color: #1fbad6;
+            border-radius: 50%;
+            animation: kepler-spin 0.8s linear infinite;
+          }
+          #kepler-load-screen .kepler-load-label {
+            font-size: 13px;
+            letter-spacing: 0.5px;
+          }
+          #kepler-load-screen .kepler-load-error {
+            font-size: 13px;
+            color: #f05e45;
+            max-width: 360px;
+            text-align: center;
+            line-height: 1.5;
+          }
+          @keyframes kepler-spin { to { transform: rotate(360deg); } }
+        </style>
+
+        <!--MapBox token-->
+        <!--
+          SECURITY NOTE: Your Mapbox access token is embedded below in plain text.
+          Anyone with access to this HTML file can see and use this token.
+          Consider using a scoped token with URL restrictions to limit misuse.
+          See: https://docs.mapbox.com/accounts/guides/tokens/#url-restrictions
+        -->
+        <script>
+          /**
+           * Provide your MapBox Token
+           **/
+          window.MAPBOX_TOKEN = "pk.eyJ1IjoidWNmLW1hcGJveCIsImEiOiJjbDBiYzlveHgwdnF0M2NtZzUzZWZuNWZ4In0.l9J8ptz3MKwaU9I4PtCcig";
+          window.WARNING_MESSAGE = 'No Mapbox token provided. Mapbox basemaps will not be available. To enable them, edit this file and set MAPBOX_TOKEN to your Mapbox access key.';
+        </script>
+      </head>
+      <body>
+        <!-- We will put our React component inside this div. -->
+        <div id="app">
+          <div id="kepler-load-screen">
+            <div class="kepler-spinner"></div>
+            <div class="kepler-load-label">Loading map…</div>
+          </div>
+        </div>
+
+        <!--
+          Load our React component. This script is not executed inline: it is run
+          by the module shim in <head> once the kepler.gl UMD bundle (and its
+          global peer dependencies) have finished loading.
+        -->
+        <script type="text/kepler-bootstrap">
+          /* Validate Mapbox Token */
+          if ((MAPBOX_TOKEN || '') === '' || MAPBOX_TOKEN === 'PROVIDE_MAPBOX_TOKEN') {
+            console.warn('[kepler.gl]', WARNING_MESSAGE);
+          }
+
+          const branding = {"appName":"kepler.gl","appWebsite":"http://kepler.gl/","appIcon":null,"appNameColor":"#1FBAD6"};
+
+          /** STORE **/
+          // Pre-seed styleType so the correct basemap fetch starts on the very
+          // first render, avoiding a flash of the default dark basemap.
+          // options.config has the versioned envelope shape: { version, config: { mapStyle, ... } }
+          const savedStyleType = "dark-matter";
+
+          const reducers = (function createReducers(redux, keplerGl, styleType) {
+            return redux.combineReducers({
+              // mount keplerGl reducer
+              keplerGl: keplerGl.keplerGlReducer.initialState({
+                uiState: {
+                  readOnly: true,
+                  currentModal: null,
+                  exportMap: Object.assign({}, keplerGl.INITIAL_UI_STATE.exportMap, branding)
+                },
+                ...(styleType ? {mapStyle: {styleType}} : {})
+              })
+            });
+          }(Redux, KeplerGl, savedStyleType));
+
+          const middleWares = (function createMiddlewares(keplerGl) {
+            return keplerGl.enhanceReduxMiddleware([
+              // Add other middlewares here
+            ]);
+          }(KeplerGl));
+
+          const enhancers = (function craeteEnhancers(redux, middles) {
+            return redux.applyMiddleware(...middles);
+          }(Redux, middleWares));
+
+          const store = (function createStore(redux, enhancers) {
+            return redux.createStore(
+              reducers,
+              {},
+              redux.compose(enhancers)
+            );
+          }(Redux, enhancers));
+          /** END STORE **/
+
+          /** COMPONENTS **/
+          var BrandLogo = (function createBrandLogo(react, branding) {
+            return function BrandLogo(props) {
+              var fixed = Boolean(props && props.fixed);
+              var icon = branding.appIcon
+                ? react.createElement("img", {
+                    src: branding.appIcon,
+                    alt: "",
+                    "aria-hidden": true,
+                    style: {width: "22px", height: "15px", objectFit: "contain"}
+                  })
+                : react.createElement(
+                    "svg",
+                    {width: "22px", height: "15px", viewBox: "0 0 22 15", "aria-hidden": true},
+                    react.createElement(
+                      "g",
+                      {transform: "translate(11, -3) rotate(45.000000)"},
+                      react.createElement("rect", {fill: "#535C6C", x: "0", y: "5", width: "10", height: "10"}),
+                      react.createElement("rect", {fill: "#1FBAD6", x: "5", y: "0", width: "10", height: "10"})
+                    )
+                  );
+
+              return react.createElement(
+                "div",
+                {
+                  className: fixed ? "logo-container" : "side-panel-logo",
+                  style: fixed
+                    ? {position: "fixed", zIndex: 10000, padding: "4px", display: "flex", alignItems: "center"}
+                    : {display: "flex", alignItems: "flex-start"}
+                },
+                react.createElement(
+                  "div",
+                  {style: {marginTop: fixed ? 0 : "3px"}},
+                  icon
+                ),
+                react.createElement(
+                  "div",
+                  {className: "logo__title", style: {marginLeft: "6px"}},
+                  react.createElement(
+                    "a",
+                    {
+                      className: "kepler_gl__logo logo__link",
+                      href: branding.appWebsite,
+                      target: "_blank",
+                      rel: "noopener noreferrer",
+                      style: {
+                        color: branding.appNameColor,
+                        fontFamily: "ff-clan-web-pro, 'Helvetica Neue', Helvetica, sans-serif",
+                        fontSize: "14px",
+                        fontWeight: 600,
+                        letterSpacing: "1.17px",
+                        textDecoration: "none"
+                      }
+                    },
+                    react.createElement("span", {style: {color: branding.appNameColor}}, branding.appName)
+                  ),
+                  !fixed && props && props.version
+                    ? react.createElement(
+                        "div",
+                        {
+                          className: "logo__version",
+                          style: {fontSize: "10px", color: "#a0a7b4", letterSpacing: "0.83px", lineHeight: "14px"}
+                        },
+                        props.version
+                      )
+                    : null
+                )
+              );
+            };
+          }(React, branding));
+
+          /** Custom map control factory to restore export editing and chart display. **/
+          var CustomMapControlFactory = (function createCustomMapControl(react, keplerGl) {
+            var EffectControlFactory = keplerGl.EffectControlFactory;
+            var EffectManagerFactory = keplerGl.EffectManagerFactory;
+            var AnnotationControlFactory = keplerGl.AnnotationControlFactory;
+            var AnnotationManagerFactory = keplerGl.AnnotationManagerFactory;
+            var ChartControlFactory = keplerGl.ChartControlFactory;
+            var ChartManagerFactory = keplerGl.ChartManagerFactory;
+            var MapControlFactory = keplerGl.MapControlFactory;
+
+            if (
+              !EffectControlFactory ||
+              !EffectManagerFactory ||
+              !AnnotationControlFactory ||
+              !AnnotationManagerFactory ||
+              !ChartControlFactory ||
+              !ChartManagerFactory ||
+              !MapControlFactory
+            ) {
+              console.warn('kepler.gl: Export control factories not available, skipping control injection');
+              return null;
+            }
+
+            function ExportMapControlFactory(
+              EffectControl,
+              EffectManager,
+              AnnotationControl,
+              AnnotationManager,
+              ChartControl,
+              ChartManager
+            ) {
+              var args = Array.prototype.slice.call(arguments, 6);
+              var MapControl = MapControlFactory.apply(null, args);
+              var defaultActionComponents = MapControl.defaultActionComponents || [];
+
+              var ExportMapControl = function ExportMapControl(props) {
+                var readOnly = Boolean(props.readOnly);
+                var mapControls = props.mapControls || {};
+                var charts = props.charts || [];
+                var actionComponents = defaultActionComponents.filter(function(ActionComponent) {
+                  return !readOnly || ActionComponent !== AnnotationControl;
+                });
+                if (!readOnly) {
+                  actionComponents = actionComponents.concat([ChartControl, EffectControl]);
+                }
+                var showEffects = !readOnly && Boolean(mapControls.effect && mapControls.effect.active);
+                var showAnnotations = !readOnly && Boolean(mapControls.annotation && mapControls.annotation.active);
+                var showChartPanel = !readOnly && Boolean(mapControls.chart && mapControls.chart.active);
+                var hasPinnedCharts = charts.some(function(chart) { return chart.pinned !== false; });
+                var showCharts = readOnly ? charts.length > 0 : showChartPanel || hasPinnedCharts;
+                var rightPanelVisible = showEffects || showAnnotations || showCharts;
+                return react.createElement(
+                  'div',
+                  {style: {
+                    position: 'absolute',
+                    display: 'flex',
+                    top: (props.top || 0) + 'px',
+                    right: 0,
+                    zIndex: 1,
+                    maxHeight: '100%',
+                    pointerEvents: 'none'
+                  }},
+                  react.createElement(
+                    'div',
+                    {style: {position: 'relative', pointerEvents: 'all'}},
+                    react.createElement(MapControl, Object.assign({}, props, {top: 0, actionComponents: actionComponents}))
+                  ),
+                  rightPanelVisible
+                    ? react.createElement('div', {
+                        style: {
+                          maxHeight: '100%',
+                          overflow: 'hidden',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          pointerEvents: 'all',
+                          marginTop: '10px'
+                        }
+                      },
+                      showAnnotations ? react.createElement(AnnotationManager, null) : null,
+                      showCharts ? react.createElement(ChartManager, {
+                        panelActive: showChartPanel,
+                        isExport: readOnly
+                      }) : null,
+                      showEffects ? react.createElement(EffectManager, null) : null
+                      )
+                    : null
+                );
+              };
+
+              return ExportMapControl;
+            }
+            ExportMapControlFactory.deps = [
+              EffectControlFactory,
+              EffectManagerFactory,
+              AnnotationControlFactory,
+              AnnotationManagerFactory,
+              ChartControlFactory,
+              ChartManagerFactory
+            ].concat(MapControlFactory.deps);
+
+            return [MapControlFactory, ExportMapControlFactory];
+          }(React, KeplerGl));
+
+          var CustomPanelHeaderFactory = (function createCustomPanelHeader(react, keplerGl, BrandLogo) {
+            var PanelHeaderFactory = keplerGl.PanelHeaderFactory;
+            if (!PanelHeaderFactory) {
+              console.warn('kepler.gl: Panel header factory not available, skipping branding injection');
+              return null;
+            }
+
+            function ExportPanelHeaderFactory() {
+              var PanelHeader = PanelHeaderFactory.apply(null, arguments);
+              return function ExportPanelHeader(props) {
+                return react.createElement(
+                  PanelHeader,
+                  Object.assign({}, props, {logoComponent: BrandLogo})
+                );
+              };
+            }
+            ExportPanelHeaderFactory.deps = PanelHeaderFactory.deps;
+            return [PanelHeaderFactory, ExportPanelHeaderFactory];
+          }(React, KeplerGl, BrandLogo));
+
+          var CustomFactories = [CustomMapControlFactory, CustomPanelHeaderFactory].filter(Boolean);
+          var KeplerGlComponent = CustomFactories.length
+            ? KeplerGl.injectComponents(CustomFactories)
+            : KeplerGl.KeplerGl;
+
+          var KeplerElement = (function makeKeplerElement(react, keplerGl, mapboxToken, branding, BrandLogo) {
+            return function App() {
+              var rootElm = react.useRef(null);
+              var _useState = react.useState({
+                width: window.innerWidth,
+                height: window.innerHeight
+              });
+              var windowDimension = _useState[0];
+              var setDimension = _useState[1];
+              react.useEffect(function sideEffect(){
+                function handleResize() {
+                  setDimension({width: window.innerWidth, height: window.innerHeight});
+                };
+                window.addEventListener('resize', handleResize);
+                return function() {window.removeEventListener('resize', handleResize);};
+              }, []);
+              // Remove the loading overlay after the first render is painted.
+              // useEffect fires post-commit, so this is safe under React 19's
+              // concurrent renderer — the map is visible before the overlay goes away.
+              react.useEffect(function removeLoadScreen() {
+                var loadScreen = document.getElementById('kepler-load-screen');
+                if (loadScreen) loadScreen.remove();
+              }, []);
+              return react.createElement(
+                'div',
+                {style: {position: 'absolute', left: 0, width: '100vw', height: '100vh'}},
+                react.createElement(BrandLogo, {fixed: true}),
+                react.createElement(KeplerGlComponent, {
+                  mapboxApiAccessToken: mapboxToken,
+                  id: "map",
+                  width: windowDimension.width,
+                  height: windowDimension.height,
+                  appName: branding.appName,
+                  appWebsite: branding.appWebsite
+                })
+              )
+            }
+          }(React, KeplerGl, MAPBOX_TOKEN, branding, BrandLogo));
+
+          const app = (function createReactReduxProvider(react, reactRedux, KeplerElement) {
+            return react.createElement(
+              reactRedux.Provider,
+              {store},
+              react.createElement(KeplerElement, null)
+            )
+          }(React, ReactRedux, KeplerElement));
+          /** END COMPONENTS **/
+
+          /** Render **/
+          (function render(react, reactDOM, app) {
+            const container = document.getElementById('app');
+            const root = reactDOM.createRoot(container);
+            root.render(app);
+          }(React, ReactDOM, app));
+
+          /**
+           * Customize map.
+           * In the following section you can use the store object to dispatch Kepler.gl actions
+           * to add new data and customize behavior
+           */
+          (function customize(keplerGl, store) {
+            const datasets = [{"version":"v1","data":{"id":"qxs4ue","label":"lorimer-gazetteer-1-0 - Copy(Sheet3) (1).csv","color":[143,47,191],"allData":[[1,"Dhank Town","Dhāhirah","Na'īm","Alāyah",400,"Houses",false,23.45599,56.55],[2,"Dhank Town","Dhāhirah","Na'īm & Shakūr","Ayāl 'Azīz, 'Ayāl Hiyah, Shawāmis, Wahaishah",300,"Houses",true,23.45599,56.14054],[3,"Wuqbah","Wādi Dhank (Dhāhirah)","Bani 'Ali","\n",150,"Houses",false,23.6333,56.4667],[4,"Yanqul","Wādi Dhank (Dhāhirah)","Bani 'Ali","\n",200,"Houses",false,23.59,56.545],[5,"Fida","Wādi Dhank (Dhāhirah)","Bani Zid","\n",200,"Houses",false,23.55,56.4833],[6,"Dūt","Wādi Dhank (Dhāhirah)","Bidāh & Sā'idah","\n",100,"Houses",true,23.61,56.45],[7,"Khadal","Wādi Dhank / Wādi-al-Jailah","Jarāwinah (Bani Kalbān)","\n",100,"Houses",false,23.45,56.6],[8,"Lithaibāt","Wādi-al-Hilti (Bātinah)","Maqābil & Jahāwar","\n",50,"Houses",true,24.15,56.7],[9,"Aqair","Wādi-al-Hilti (Bātinah)","Maqābil & Jahāwar","\n",40,"Houses",true,23.77953,56.62352],[10,"Haiyadh","Wādi-al-Hilti (Bātinah)","\n","\n",null,"\n",false,24.2,56.65],[11,"Khabt","Wādi-al-Hilti (Bātinah)","Jahāwar & Bani 'Īsa","\n",30,"Houses",true,24.12,56.72],[12,"Ablah","Wādi-al-Hilti (Bātinah)","Jahāwar","\n",20,"Houses",false,24.1,56.75],[13,"Abailah","Wādi-al-Hilti (Bātinah)","Jahāwar & Bani 'Īsa","\n",10,"Houses",true,24.11,56.74],[14,"Riqqah","Wādi-al-Hilti (Bātinah)","\n","\n",null,"Encampment",false,24.14,56.71],[15,"Hiwar","Wādi-al-Hilu (Masqat)","Bani Battāsh","Ma'āshirah",10,"Houses",false,23.48,58.35],[16,"Falaj-al-Hilam","Wādi-al-Hilu (Masqat)","Ma'āshirah","\n",8,"Houses",false,23.5,58.38],[17,"Qurain","Hajar","Bani Hina","\n",100,"Houses",false,23.25,57.65],[18,"Habbās","Hajar","Bani Hina","\n",80,"Houses",false,23.2,57.7],[19,"Haili","Hajar","Bani Hina","\n",200,"Houses",false,23.18,57.75],[20,"Qadimah","Hajar","Bani Hina","\n",30,"Houses",false,23.15,57.72],[21,"Jammah","Hajar","Bani Hina","\n",40,"Houses",false,23.38,57.52],[22,"Naghzah","Wādi Samāil (Hajar)","Bani Hina","\n",50,"Houses",false,23.3,58.02],[23,"Hārithīyah","Wādi Samāil (Hajar)","Bani Hina","\n",20,"Houses",false,23.32,58.04],[24,"Khōdh","Wādi Samāil (Hajar)","Bani Hina","\n",120,"Houses",false,23.56,58.18],[25,"Hajrat-ash-Shaikh","Wādi Fara' (Hajar)","Bani Hina","\n",50,"Houses",false,23.4,57.42],[26,"Hārat-al-Jabah","Wādi Fara' (Hajar)","Bani Hina","\n",80,"Houses",false,null,null],[27,"Saqairiyah","Wādi Fara' (Hajar)","Bani Hina","\n",30,"Houses",false,23.44,57.38],[28,"Shabaikah","Wādi Fara' (Hajar)","Bani Hina","\n",40,"Houses",false,23.45,57.36],[29,"Hawail","Wādi Bani Ghāfir (Hajar)","Bani Hina","\n",45,"Houses",false,23.48,57.25],[30,"Hōqain","Wādi Bani Ghāfir (Hajar)","Bani Hina","\n",200,"Houses",false,23.52,57.28],[31,"Khān","Wādi-al-Jizi (Hajar)","Bani Hina","\n",40,"Houses",false,24.28,56.45],[32,"Nizwa","Omān Proper","Bani Hina","Includes Hawāqinah",300,"Houses",false,22.9333,57.5333],[33,"Bilād Sait","Omān Proper","Bani Hina","\n",40,"Houses",false,23.1878,57.3867],[34,"Ghāfāt","Omān Proper","Bani Hina","\n",50,"Houses",false,22.98,57.18],[35,"Liwa Town","Bātinah","Bani Hina","\n",160,"Houses",false,24.5333,56.5667],[36,"Hail Bani Hina","Wādi-al-'Ain (Dhāhirah)","Bani Hina","\n",100,"Houses",false,23.25,56.95],[37,"Dham","Wādi-al-'Ain (Dhāhirah)","Bani Hina","\n",80,"Houses",false,23.23,56.9],[38,"Ain Bani Sārikh","Wādi-al-'Ain (Dhāhirah)","Bani Sārikh","\n",70,"Houses",false,23.22,56.88],[39,"Kubārah","Wādi-al-'Ain (Dhāhirah)","Bani Jissās","\n",40,"Houses",false,23.2,56.85],[40,"Salaif","Wādi-al-'Ain (Dhāhirah)","Masādharah","\n",150,"Houses",false,23.2167,56.5167],[41,"Salaif","Wādi-al-'Ain (Dhāhirah)","Suwāwifah","\n",200,"Houses",false,23.2167,56.5167],[42,"Hayūl (Wādi-al-)","Mahādhah ('Omān Promontory)","Bani Ka'ab","Miyādilah",100,"Houses",true,24.45,55.98],[43,"Jawaif","Wādi Khadhra (Mahādhah)","Bani Ka'ab","Miyāisah",null,"Houses",false,24.42,55.95],[44,"Jila'ah (Wādi Bu)","Mahādhah ('Omān Promontory)","Bani Ka'ab","Misā'īd",70,"Houses",false,24.48,55.92],[45,"Kahal","Mahādhah ('Omān Promontory)","Bani Ka'ab","Ahl Yidhwah",40,"Houses",false,24.5,55.9],[46,"Kahal","Mahādhah ('Omān Promontory)","Bani Ka'ab","Makātim",30,"Houses",false,24.5,55.9],[47,"Khabbain","Wādi Khatwah (Mahādhah)","Bani Ka'ab","Nawaijiyīn",80,"Houses",false,24.46,56.02],[48,"Khadhra (Wādi)","Mahādhah ('Omān Promontory)","Bani Ka'ab & Kunūd","\n",null,"Dwellings",false,24.4,55.97],[49,"Khatwah","Wādi Bu Sa'ad (Mahādhah)","Bani Ka'ab","Nawaijiyīn",280,"Houses",false,24.44,56.05],[50,"Kamah","Omān Proper","Bani Riyām","\n",20,"Houses",false,23.02,57.5],[51,"Karsha","Omān Proper","Bani Riyām","\n",20,"Houses",false,22.88,57.55],[52,"Khadhra Bin-Daffa'","Omān Proper","Jannabah","\n",60,"Houses",false,22.75,57.8],[53,"Khadhra Bin-Daffa'","Omān Proper","Bani Ruwāhah","\n",60,"Houses",false,22.75,57.8],[54,"Khurmah","Wādi Qant ('Omān Proper)","Awāmir","\n",60,"Houses",false,22.82,57.72],[55,"Mahyūl","Omān Proper","Āl 'Umair & Āl Bū Sa'īd","\n",50,"Houses",true,22.95,57.62],[56,"Manah","Omān Proper","\n","\n",null,"\n",false,22.8589,57.5389],[57,"Muqazzih","Omān Proper","Bani Jābir","Bani Hadhrami",150,"Houses",false,22.78,57.68],[58,"Muti","Omān Proper","Bani Riyām","\n",300,"Houses",false,23.08,57.57],[59,"Mōz (Birkat-al-)","Omān Proper","\n","\n",null,"\n",false,null,null],[60,"Nakhīlah (Abu)","Omān Proper","Āl Bū Sa'īd","\n",0,"\n",false,null,null],[61,"Qārūt","Omān Proper","Awāmir","\n",20,"Houses",false,22.92,57.58],[62,"Qaryah","Omān Proper","Masālibah","\n",15,"Houses",false,23,57.65],[63,"Quriyatain","Omān Proper","Awāmir","\n",80,"Houses",false,22.94,57.6],[64,"Raddah","Omān Proper","Āl Bū Sa'īd","\n",20,"Houses",false,22.9,57.58],[65,"Saddi","Omān Proper","Manādharah, Darāmikah & Bani Ruwāhah","\n",30,"Houses",true,22.89,57.54],[66,"Saifam","Wādi Saifam ('Omān Proper)","Bani Shakail","\n",180,"Houses",false,23.05,56.98],[67,"Aflāj Bani Qitab","Dhāhirah","Bani Qitab & Balūchi","\n",600,"Houses",true,23.5,56.35],[68,"Bizaili","Dhāhirah","Na'īm","Āl Bū Shāmis",40,"Houses",false,23.45,56.28],[69,"Mufiyah","Dhāhirah","Na'īm","Āl Bū Shāmis",30,"Blanket/mat wigwams",false,23.42,56.25],[70,"Sanainah","Dhāhirah","Na'īm","Āl Bū Shāmis",200,"Houses",false,23.75,55.88],[71,"Tana'am","Wādi Sanaisal (Dhāhirah)","Darū'","\n",null,"\n",false,23.15,56.45],[72,"Auqad","Dhufār Proper","Āl Kathīr","Bait Fādhil",60,"Mud houses",false,17,54.0333],[73,"Auqad","Dhufār Proper","Āl Kathīr","Bait Marhūn",15,"Mud houses",false,17,54.0333],[74,"Bilād","Dhufār Proper","\n","\n",0,"Ruined site",false,17.01,54.15],[75,"Dahārīz","Dhufār Proper","Āl Kathīr","Āl Fādhil & others",100,"Mud & stone houses",false,17.03,54.17],[76,"Hāfah","Dhufār Proper","Āl Kathīr & low-caste fishermen","Shanāfirah (Āl Kathīr)",150,"Stone & mud houses",true,17.0083,54.1],[77,"Hamrān","Dhufār Proper","Bayāsirah","\n",1,"House",false,17.08,54.28],[78,"Hisn","Dhufār Proper","\n","\n",null,"Fort & huts",false,17.012,54.095],[79,"Rizāt","Dhufār Proper","Āl Kathīr","\n",10,"Mud houses",false,17.06,54.25],[80,"Robāt","Dhufār Proper","\n","\n",0,"Deserted site",false,17.025,54.085],[81,"Salālah","Dhufār Proper","\n","\n",null,"\n",false,17.0167,54.0917],[82,"Tāqa","Dhufār Proper","Qaras, Sharīfs & Mashāikh","Ma'ashani (Qaras)",21,"Mud huts & stone building",true,17.0381,54.3956],[83,"Dairah","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",70,"Houses",false,22.85,58.45],[84,"Samūt","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",50,"Houses",false,null,null],[85,"Ghamsah","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",60,"Houses",false,22.87,58.48],[86,"Qaryah (Wādi Dima)","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",150,"Houses",false,22.88,58.5],[87,"Hail (Wādi Dima)","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",20,"Houses",false,22.89,58.52],[88,"Qutaifi","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",40,"Houses",false,22.9,58.53],[89,"Barkyāt","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",60,"Houses",false,22.91,58.55],[90,"Ahla","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",20,"Houses",false,22.92,58.56],[91,"Samhān","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",50,"Houses",false,null,null],[92,"Hisn (Wādi Dima)","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",180,"Houses",false,22.94,58.6],[93,"Hārrah","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",20,"Houses",false,22.95,58.61],[94,"Qabsah","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",10,"Houses",false,22.96,58.62],[95,"Auf","Wādi Dima (Eastern Hajar)","Bani Shahaim","\n",80,"Houses",false,22.97,58.64],[96,"Hājir","Wādi Dima (Eastern Hajar)","Bani Ruwāhah","\n",100,"Houses",false,22.98,58.66],[97,"Baraimi Village","Baraimi Oasis (Oman)","\n","\n",null,"\n",false,24.25,55.7667],[98,"Su'arah","Baraimi Oasis (Oman)","Na'īm","Qarātisah",100,"Houses",false,24.255,55.775],[99,"Film","Ruūs-al-Jibāl (Musandam)","Dhahūriyīn","\n",60,"Houses",false,26.15,56.36],[100,"Habalain","Ruūs-al-Jibāl (Musandam)","Dhahūriyīn","\n",25,"Houses",false,26.18,56.38],[101,"Mansal","Ruūs-al-Jibāl (Musandam)","Dhahūriyīn","\n",6,"Houses",false,26.2,56.35],[102,"Maqāqah","Ruūs-al-Jibāl (Musandam)","Dhahūriyīn","\n",100,"Houses",false,null,null],[103,"Qānah","Ruūs-al-Jibāl (Musandam)","Dhahūriyīn","\n",40,"Houses",false,26.2333,56.3167],[104,"Sham","Khor-ash-Sham (Ruūs-al-Jibāl)","Dhahūriyīn","\n",25,"Houses",false,26.2167,56.3],[105,"Sibi","Khor-ash-Sham (Ruūs-al-Jibāl)","Dhahūriyīn","\n",7,"Houses",false,26.23,56.28],[106,"Balad","Ghubbat Shābūs (Ruūs-al-Jibāl)","Dhahūriyīn","\n",20,"Houses",false,26.25,56.4],[107,"Muntaf","Ghubbat Shīsah (Ruūs-al-Jibāl)","Dhahūriyīn","\n",15,"Houses",false,26.27,56.42],[108,"Shīsah","Ghubbat Shīsah (Ruūs-al-Jibāl)","Dhahūriyīn","\n",15,"Houses",false,26.28,56.43],[108,null,null,null,null,null,null,null,null,null],[98,null,null,null,null,null,null,null,null,null],[10,null,null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null,null,null],[1,"Dhāhirah & Wādi Dhank:",null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null,null,null],[2,"Wādi Dima (Eastern Hajar):",null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null,null,null],[3,"Dhufār District:",null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null,null,null],[4,"Ru'ūs-al-Jibāl (Musandam Peninsula):",null,null,null,null,null,null,null,null],[null,null,null,null,null,null,null,null,null,null]],"fields":[{"name":"Row_ID","type":"integer","format":"","analyzerType":"INT"},{"name":"Place_Name","type":"string","format":"","analyzerType":"STRING"},{"name":"Region_or_Wadi","type":"string","format":"","analyzerType":"STRING"},{"name":"Tribe","type":"string","format":"","analyzerType":"STRING"},{"name":"Section_or_Subtribe","type":"string","format":"","analyzerType":"STRING"},{"name":"Houses","type":"real","format":"","analyzerType":"FLOAT"},{"name":"Structure","type":"string","format":"","analyzerType":"STRING"},{"name":"Shared_Tribe","type":"boolean","format":"","analyzerType":"BOOLEAN"},{"name":"latitude","type":"real","format":"","analyzerType":"FLOAT"},{"name":"longitude","type":"real","format":"","analyzerType":"FLOAT"}],"type":"","metadata":{"id":"qxs4ue","format":"row","label":"lorimer-gazetteer-1-0 - Copy(Sheet3) (1).csv","size":10518},"disableDataOperation":false}}];
+            const config = {"version":"v1","config":{"visState":{"filters":[],"layers":[{"id":"cjmlqje","type":"point","config":{"dataId":"qxs4ue","columnMode":"points","label":"lorimer-gazetteer-1-0 - Copy(Sheet3) (1)","color":[218,112,191],"highlightColor":[252,242,26,255],"columns":{"lat":"latitude","lng":"longitude"},"isVisible":true,"visConfig":{"pulseTrigger":"continuous","pulseTimeField":"","pulseDurationMs":1000,"glowEnabled":false,"glowExtent":2,"glowStrength":0.5,"pulseEnabled":false,"pulseMode":"pulse","pulseSpeed":1,"pulseExpansion":2,"radius":21,"fixedRadius":false,"opacity":0.8,"outline":false,"thickness":2,"strokeColor":null,"colorRange":{"name":"Global Warming","type":"sequential","category":"Uber","colors":["#4C0035","#880030","#B72F15","#D6610A","#EF9100","#FFC300"]},"strokeColorRange":{"name":"Global Warming","type":"sequential","category":"Uber","colors":["#4C0035","#880030","#B72F15","#D6610A","#EF9100","#FFC300"]},"radiusRange":[0,50],"filled":true,"billboard":false,"allowHover":true,"showNeighborOnHover":false,"showHighlightColor":true},"hidden":false,"textLabel":[{"field":null,"color":[255,255,255],"size":18,"weight":400,"offset":[0,0],"anchor":"start","alignment":"center","outlineWidth":0,"outlineColor":[255,0,0,255],"background":false,"backgroundColor":[0,0,200,255],"collisionEnabled":false}]},"visualChannels":{"colorField":{"name":"Place_Name","type":"string"},"colorScale":"ordinal","strokeColorField":null,"strokeColorScale":"quantile","sizeField":null,"sizeScale":"linear"}}],"effects":[],"annotations":[],"interactionConfig":{"tooltip":{"fieldsToShow":{"qxs4ue":[{"name":"Row_ID","format":null},{"name":"Place_Name","format":null},{"name":"Region_or_Wadi","format":null},{"name":"Tribe","format":null},{"name":"Section_or_Subtribe","format":null},{"name":"Houses","format":null},{"name":"Structure","format":null},{"name":"Shared_Tribe","format":null},{"name":"latitude","format":null},{"name":"longitude","format":null}]},"timezone":null,"compareMode":false,"compareType":"absolute","enabled":true},"legend":{"hideInvisibleLayers":false,"enabled":false},"brush":{"size":2.5,"enabled":false},"geocoder":{"limitSearch":false,"color":[255,0,0],"enabled":false},"coordinate":{"enabled":false},"annotation":{"enabled":false},"zoomOpacity":{"controllers":[],"enabled":false}},"layerBlending":"normal","overlayBlending":"normal","splitMaps":[],"animationConfig":{"currentTime":null,"speed":1,"timeFormat":null,"timezone":null},"editor":{"features":[],"visible":true},"layerOrder":["cjmlqje"],"groupBys":[],"joins":[]},"mapState":{"bearing":0,"dragRotate":false,"latitude":23.94666590461044,"longitude":56.54761831084542,"pitch":0,"zoom":6.773517533563837,"isSplit":false,"isViewportSynced":true,"isZoomLocked":false,"splitMapViewports":[],"maxPitch":60,"mapSplitMode":"SINGLE_MAP","swipeComparePercentage":50,"mapViewMode":"MODE_2D","globe":{"enabled":false,"config":{"atmosphere":true,"hugeHalo":true,"hugeHaloRadius":3.5,"hugeHaloOpacity":0.2,"azimuth":false,"azimuthAngle":45,"terminator":true,"terminatorOpacity":0.35,"basemap":true,"labels":false,"labelsColor":[114.75,114.75,114.75],"adminLines":true,"adminLinesColor":[40,63,93],"water":true,"waterColor":[17,35,48],"surface":true,"surfaceColor":[9,16,29],"backgroundColor":[4,9,17],"stars":true}}},"mapStyle":{"styleType":"dark-matter","topLayerGroups":{},"visibleLayerGroups":{"label":true,"road":true,"border":false,"building":true,"water":true,"land":true,"3d building":false},"threeDBuildingColor":[15.035172933000911,15.035172933000911,15.035172933000911],"backgroundColor":[0,0,0],"mapStyles":{}},"uiState":{"mapControls":{"mapLegend":{"active":false},"chart":{"active":false},"cameraBookmarks":{"show":false,"settings":{"position":{"x":60,"y":20,"anchorX":"right","anchorY":"top"},"contentHeight":-1}},"mapInfo":{"active":true,"show":true}},"locale":"en","theme":"dark"}}};
+            const info = {"title":"Lorimer’s Gazetteer: Distribution of Houses in Oman","description":"An interactive map of 108 historical records extracted from Lorimer’s Gazetteer, showing the geographic distribution of recorded settlements and their associated attributes."};
+
+            const loadedData = keplerGl.KeplerGlSchema.load(
+              datasets,
+              config
+            );
+
+            // The 500 ms delay is a historical workaround for a race where
+            // keplerGl re-initialises and overwrites config applied synchronously.
+            // The pre-seeded styleType above removes the basemap flash on first
+            // render; this dispatch still applies the full saved config (layers,
+            // viewport, layer groups, etc.) once the component has settled.
+            window.setTimeout(() => {
+              store.dispatch(
+                keplerGl.addDataToMap({
+                  datasets: loadedData.datasets,
+                  config: loadedData.config,
+                  info,
+                  options: {
+                    centerMap: false,
+                  },
+                })
+              );
+            }, 500);
+          }(KeplerGl, store))
+        </script>
+      </body>
+    </html>
+  
