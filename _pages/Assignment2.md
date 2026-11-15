@@ -5,7 +5,7 @@ title: "Assignment-2"
 
                  GROUP MEMBERS: Jane & Deema
 
-# Mapping Houses in Lorimer’s Gazetteer
+# Mapping Houses in Oman from Lorimer’s Gazetteer
 
 ## 1. Choosing the topic
 
@@ -116,6 +116,4 @@ Using Gemini also required careful verification. Although it made extracting inf
 One of our biggest takeaways was that transforming historical text into spatial data involves interpretation. Decisions about how to structure a table, distinguish between individual and shared tribal counts, categorize settlements, and assign geographical coordinates all influence the final visualization. The original Gazetteer was not designed as a dataset for geographical analysis, so turning it into one required us to make these decisions carefully.
 
 We began with an interest in religion but changed direction when we realized that the available information was not consistent enough for meaningful comparison. By focusing on houses, tribes, and settlements, we were able to create a more structured dataset and explore patterns across different parts of Oman. 
-
-Link of Map: file:///C:/Users/jmm9916/Desktop/DigitalHumanities/assets/Map/houses_map.html.
 
